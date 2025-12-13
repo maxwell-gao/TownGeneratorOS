@@ -428,22 +428,56 @@ class Model:
         if len(A) == 0:
             return Polygon()
 
+        # Build index map for O(1) lookup instead of O(n) index() calls
+        # Map from point to list of indices (in case of duplicates)
+        point_to_indices = {}
+        for i, point in enumerate(A):
+            if point not in point_to_indices:
+                point_to_indices[point] = []
+            point_to_indices[point].append(i)
+
         # Simple algorithm matching Haxe implementation
         result = Polygon()
         index = 0
+        visited_indices = set()  # Prevent infinite loops
+
         while True:
+            if index in visited_indices:
+                # Already visited this index, break to prevent infinite loop
+                break
+            visited_indices.add(index)
+
             result.append(A[index])
-            try:
-                next_index = A.index(B[index])
-            except ValueError:
+
+            # Find next index using the map
+            target_point = B[index]
+            if target_point not in point_to_indices:
                 # If B[index] not found in A, we've reached the end
                 break
+
+            # Find the next index (prefer non-visited, but allow visited if it's index 0)
+            candidate_indices = point_to_indices[target_point]
+            next_index = None
+
+            for candidate in candidate_indices:
+                if candidate == 0:
+                    # Found the starting point, cycle complete
+                    return result
+                elif candidate not in visited_indices:
+                    next_index = candidate
+                    break
+
+            if next_index is None:
+                # All candidates visited, check if we can complete the cycle
+                if 0 in candidate_indices:
+                    return result
+                # No valid next index found
+                break
+
             if next_index == index:
                 # Self-loop, break
                 break
-            if next_index == 0:
-                # Completed the cycle
-                break
+
             index = next_index
 
         return result

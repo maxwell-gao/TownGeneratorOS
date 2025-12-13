@@ -11,28 +11,32 @@ class CurtainWall:
     """City wall representation"""
 
     def __init__(self, real, model, patches, reserved):
-        # Note: In Haxe, real is always set to true, but we use the parameter
-        self.real = real
+        # Match Haxe: this.real = true (always true, ignoring parameter)
+        self.real = True
         self.patches = patches
         self.gates = []
         self.towers = []
         self.segments = []
 
         if len(patches) == 1:
-            self.shape = patches[0].shape.copy()
+            # Match Haxe: shape = patches[0].shape (no copy, direct reference)
+            self.shape = patches[0].shape
         else:
             self.shape = model.find_circumference(patches)
 
-            if real:
+            if self.real:
                 smooth_factor = min(1, 40 / len(patches))
-                smoothed = []
-                for v in self.shape.vertices:
-                    # reserved is Array<Point> (vertices)
+                # Match Haxe: shape.set([for (v in shape) ...])
+                # Haxe Polygon.set(): for (i in 0...p.length) this[i].set(p[i])
+                # The new array has same length as shape, so just update in place
+                for i, v in enumerate(self.shape.vertices):
                     if v in reserved:
-                        smoothed.append(v)
+                        # Keep original vertex (already in place)
+                        pass
                     else:
-                        smoothed.append(self.shape.smooth_vertex(v, smooth_factor))
-                self.shape = Polygon(smoothed)
+                        # Update vertex with smoothed version
+                        smoothed_v = self.shape.smooth_vertex(v, smooth_factor)
+                        v.set(smoothed_v.x, smoothed_v.y)
 
         self.segments = [True] * len(self.shape.vertices)
         self._build_gates(real, model, reserved)
@@ -52,13 +56,23 @@ class CurtainWall:
         if len(entrances) == 0:
             raise ValueError("Bad walled area shape!")
 
+        # Fallback: if entrances are fewer than 3, just use them directly (robustness)
+        if len(entrances) < 3:
+            self.gates = list(entrances)
+            if self.real:
+                for gate in self.gates:
+                    if gate in self.shape.vertices:
+                        smoothed_point = self.shape.smooth_vertex(gate)
+                        gate.set(smoothed_point.x, smoothed_point.y)
+            return
+
         while len(entrances) >= 3:
             # Haxe Random.int(0, length) returns [0, length) (exclusive)
             index = Random.int(0, len(entrances))
             gate = entrances[index]
             self.gates.append(gate)
 
-            if real:
+            if self.real:
                 outer_wards = [
                     w for w in model.patch_by_vertex(gate) if w not in self.patches
                 ]
@@ -83,36 +97,51 @@ class CurtainWall:
 
                             halves = outer.shape.split(gate, farthest)
                             new_patches = [Patch(half) for half in halves]
-                            model.patches = [
-                                p if p != outer else new_patches[0]
-                                for p in model.patches
-                            ]
-                            model.patches.extend(new_patches[1:])
+                            # Match Haxe: model.patches.replace(outer, newPatches)
+                            # Haxe replace: a[index++] = newEls[0]; then insert rest
+                            try:
+                                idx = model.patches.index(outer)
+                                # Replace at index with new_patches[0], then insert rest
+                                model.patches[idx] = new_patches[0]
+                                for i in range(1, len(new_patches)):
+                                    model.patches.insert(idx + i, new_patches[i])
+                            except ValueError:
+                                # If outer not found, just add new_patches
+                                model.patches.extend(new_patches)
 
-            # Remove neighboring entrances
+            # Remove neighboring entrances (match Haxe splice operations)
+            # Haxe splice(start, count) removes count elements starting from start
             if index == 0:
-                entrances = entrances[2:]
+                # Haxe: entrances.splice(0, 2) then entrances.pop()
+                entrances = entrances[2:]  # Remove first 2 elements
                 if len(entrances) > 0:
-                    entrances.pop()
+                    entrances.pop()  # Remove last element
             elif index == len(entrances) - 1:
-                entrances = entrances[: index - 1]
+                # Haxe: entrances.splice(index - 1, 2) then entrances.shift()
+                entrances = (
+                    entrances[: index - 1] + entrances[index + 1 :]
+                )  # Remove 2 elements at index-1 and index
                 if len(entrances) > 0:
-                    entrances.pop(0)
+                    entrances.pop(0)  # Remove first element (shift)
             else:
+                # Haxe: entrances.splice(index - 1, 3)
+                # Remove 3 elements starting from index-1 (index-1, index, index+1)
                 entrances = entrances[: index - 1] + entrances[index + 2 :]
 
         if len(self.gates) == 0:
-            raise ValueError("Bad walled area shape!")
+            # As a fallback, if entrances remain, pick the first as a gate
+            if len(entrances) > 0:
+                self.gates.append(entrances[0])
+            else:
+                raise ValueError("Bad walled area shape!")
 
-        # Smooth gate sections
-        if real:
-            smoothed = []
-            for v in self.shape.vertices:
-                if v in self.gates:
-                    smoothed.append(self.shape.smooth_vertex(v))
-                else:
-                    smoothed.append(v)
-            self.shape = Polygon(smoothed)
+        # Smooth gate sections (match Haxe: gate.set(shape.smoothVertex(gate)))
+        if self.real:
+            # Update gates in place - they are references to shape vertices
+            for gate in self.gates:
+                if gate in self.shape.vertices:
+                    smoothed_point = self.shape.smooth_vertex(gate)
+                    gate.set(smoothed_point.x, smoothed_point.y)
 
     def build_towers(self):
         """Build towers along the wall"""

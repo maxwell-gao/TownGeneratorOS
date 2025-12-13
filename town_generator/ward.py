@@ -7,6 +7,7 @@ from .polygon import Polygon
 from .point import Point
 from .random import Random
 from .math_utils import distance2line, interpolate as geom_interpolate
+from .cutter import Cutter
 
 
 class Ward:
@@ -229,7 +230,10 @@ class Ward:
     def create_ortho_building(poly, min_block_sq, fill):
         """Create orthogonal buildings"""
 
-        def slice(poly, c1, c2):
+        def slice(poly, c1, c2, depth=0):
+            # Prevent runaway recursion
+            if depth > 50:
+                return []
             v0 = Ward._find_longest_edge_vertex(poly)
             v1 = poly.next(v0)
             v = v1 - v0
@@ -254,7 +258,7 @@ class Ward:
                     if Random.bool(fill):
                         buildings.append(half)
                 else:
-                    buildings.extend(slice(half, c1, c2))
+                    buildings.extend(slice(half, c1, c2, depth + 1))
             return buildings
 
         if poly.square < min_block_sq:
@@ -264,10 +268,12 @@ class Ward:
             c1 = poly.vector(v0)
             c2 = c1.rotate90()
             # Match Haxe: while(true) loop until blocks.length > 0
-            while True:
-                blocks = slice(poly, c1, c2)
+            for _ in range(100):  # limit retries to avoid infinite loop
+                blocks = slice(poly, c1, c2, 0)
                 if len(blocks) > 0:
                     return blocks
+            # Fallback: return original polygon if no blocks generated
+            return [poly]
 
     @staticmethod
     def _find_longest_edge_vertex(poly):
@@ -418,20 +424,38 @@ class Castle(Ward):
 
 # Add more ward types as needed
 class MerchantWard(CommonWard):
+    """Merchant ward"""
+
     def __init__(self, model, patch):
-        min_sq = 20 + 100 * Random.float() * Random.float()
-        grid_chaos = 0.3 + Random.float() * 0.2
-        size_chaos = 0.5
-        super().__init__(model, patch, min_sq, grid_chaos, size_chaos)
+        # Match Haxe: 50 + 60 * Random.float() * Random.float()
+        min_sq = 50 + 60 * Random.float() * Random.float()
+        # Match Haxe: 0.5 + Random.float() * 0.3
+        grid_chaos = 0.5 + Random.float() * 0.3
+        # Match Haxe: 0.7
+        size_chaos = 0.7
+        # Match Haxe: emptyProb = 0.15
+        super().__init__(model, patch, min_sq, grid_chaos, size_chaos, 0.15)
+
+    @staticmethod
+    def rate_location(model, patch):
+        """Rate location suitability for merchant ward"""
+        # Merchant ward should be as close to the center as possible
+        center = model.plaza.shape.center if model.plaza else model.center
+        return patch.shape.distance(center)
 
     def get_label(self):
         return "Merchant"
 
 
 class GateWard(CommonWard):
+    """Gate ward"""
+
     def __init__(self, model, patch):
-        min_sq = 15 + 60 * Random.float() * Random.float()
-        grid_chaos = 0.4 + Random.float() * 0.3
+        # Match Haxe: 10 + 50 * Random.float() * Random.float()
+        min_sq = 10 + 50 * Random.float() * Random.float()
+        # Match Haxe: 0.5 + Random.float() * 0.3
+        grid_chaos = 0.5 + Random.float() * 0.3
+        # Match Haxe: 0.7
         size_chaos = 0.7
         super().__init__(model, patch, min_sq, grid_chaos, size_chaos)
 
@@ -440,33 +464,93 @@ class GateWard(CommonWard):
 
 
 class AdministrationWard(CommonWard):
+    """Administration ward"""
+
     def __init__(self, model, patch):
-        min_sq = 30 + 120 * Random.float() * Random.float()
-        grid_chaos = 0.2 + Random.float() * 0.2
-        size_chaos = 0.4
+        # Match Haxe: 80 + 30 * Random.float() * Random.float()
+        min_sq = 80 + 30 * Random.float() * Random.float()
+        # Match Haxe: 0.1 + Random.float() * 0.3
+        grid_chaos = 0.1 + Random.float() * 0.3
+        # Match Haxe: 0.3
+        size_chaos = 0.3
         super().__init__(model, patch, min_sq, grid_chaos, size_chaos)
+
+    @staticmethod
+    def rate_location(model, patch):
+        """Rate location suitability for administration ward"""
+        # Ideally administration ward should overlook the plaza,
+        # otherwise it should be as close to the plaza as possible
+        if model.plaza is not None:
+            if patch.shape.borders(model.plaza.shape):
+                return 0
+            else:
+                return patch.shape.distance(model.plaza.shape.center)
+        else:
+            return patch.shape.distance(model.center)
 
     def get_label(self):
         return "Administration"
 
 
-class MilitaryWard(CommonWard):
-    def __init__(self, model, patch):
-        min_sq = 25 + 100 * Random.float() * Random.float()
-        grid_chaos = 0.3 + Random.float() * 0.2
-        size_chaos = 0.5
-        super().__init__(model, patch, min_sq, grid_chaos, size_chaos)
+class MilitaryWard(Ward):
+    """Military ward - should border citadel or city walls"""
+
+    def create_geometry(self):
+        """Create geometry for military ward"""
+        import math
+
+        block = self.get_city_block()
+        self.geometry = Ward.create_alleys(
+            block,
+            math.sqrt(block.square) * (1 + Random.float()),
+            0.1 + Random.float() * 0.3,  # gridChaos: regular
+            0.3,  # sizeChaos
+            0.25,  # emptyProb: squares
+        )
+
+    @staticmethod
+    def rate_location(model, patch):
+        """Rate location suitability for military ward"""
+        # Military ward should border the citadel or the city walls
+        if model.citadel is not None and model.citadel.shape.borders(patch.shape):
+            return 0
+        elif model.wall is not None and model.wall.borders(patch):
+            return 1
+        else:
+            # If no citadel and no wall, return 0; otherwise infinity
+            return 0 if (model.citadel is None and model.wall is None) else float("inf")
 
     def get_label(self):
         return "Military"
 
 
 class PatriciateWard(CommonWard):
+    """Patriciate ward"""
+
     def __init__(self, model, patch):
-        min_sq = 40 + 150 * Random.float() * Random.float()
-        grid_chaos = 0.2 + Random.float() * 0.2
-        size_chaos = 0.3
-        super().__init__(model, patch, min_sq, grid_chaos, size_chaos)
+        # Match Haxe: 80 + 30 * Random.float() * Random.float()
+        min_sq = 80 + 30 * Random.float() * Random.float()
+        # Match Haxe: 0.5 + Random.float() * 0.3
+        grid_chaos = 0.5 + Random.float() * 0.3
+        # Match Haxe: 0.8
+        size_chaos = 0.8
+        # Match Haxe: emptyProb = 0.2
+        super().__init__(model, patch, min_sq, grid_chaos, size_chaos, 0.2)
+
+    @staticmethod
+    def rate_location(model, patch):
+        """Rate location suitability for patriciate ward"""
+        # Patriciate ward prefers to border a park and not to border slums
+        rate = 0
+        for p in model.patches:
+            if p.ward is not None and p.shape.borders(patch.shape):
+                from .ward import Park, Slum
+
+                if isinstance(p.ward, Park):
+                    rate -= 1
+                elif isinstance(p.ward, Slum):
+                    rate += 1
+        return rate
 
     def get_label(self):
         return "Patriciate"
@@ -474,27 +558,64 @@ class PatriciateWard(CommonWard):
 
 class Park(Ward):
     def create_geometry(self):
-        # Parks have groves (simplified)
         block = self.get_city_block()
-        # Create some grove polygons
-        self.geometry = [block]  # Simplified
+        if block.compactness >= 0.7:
+            # Radial groves from centroid
+            self.geometry = Cutter.radial(block, None, self.ALLEY)
+        else:
+            # Semi-radial groves from nearest vertex
+            self.geometry = Cutter.semi_radial(block, None, self.ALLEY)
 
     def get_label(self):
         return "Park"
 
 
 class Cathedral(Ward):
+    """Cathedral ward"""
+
     def create_geometry(self):
-        block = self.patch.shape.shrink_eq(self.MAIN_STREET)
-        self.geometry = [block]  # Simplified
+        block = self.get_city_block()
+        if Random.bool(0.4):
+            # 40% ring layout
+            self.geometry = Cutter.ring(block, 2 + Random.float() * 4)
+        else:
+            # Orthogonal layout
+            self.geometry = Ward.create_ortho_building(block, 50, 0.8)
+
+    @staticmethod
+    def rate_location(model, patch):
+        """Rate location suitability for cathedral"""
+        # Ideally the main temple should overlook the plaza,
+        # otherwise it should be as close to the plaza as possible
+        if model.plaza is not None and patch.shape.borders(model.plaza.shape):
+            return -1 / patch.shape.square
+        else:
+            center = model.plaza.shape.center if model.plaza else model.center
+            return patch.shape.distance(center) * patch.shape.square
 
     def get_label(self):
-        return "Cathedral"
+        return "Temple"
 
 
 class Farm(Ward):
     def create_geometry(self):
-        self.geometry = []
+        # Single house plus ortho subdivision
+        housing = Polygon.rect(4, 4)
+        verts = self.patch.shape.vertices
+        if not verts:
+            self.geometry = [housing]
+            return
+
+        # Pick random vertex and interpolate toward centroid
+        idx = int(Random.float() * len(verts)) % len(verts)
+        rand_v = verts[idx]
+        centroid = self.patch.shape.centroid
+        pos = geom_interpolate(rand_v, centroid, 0.3 + Random.float() * 0.4)
+
+        housing.rotate(Random.float() * math.pi)
+        housing.offset(pos)
+
+        self.geometry = Ward.create_ortho_building(housing, 8, 0.5)
 
     def get_label(self):
         return "Farm"
