@@ -213,6 +213,7 @@ class Model:
 
     def _build_walls(self):
         """Build city walls"""
+        # In Haxe, citadel.shape.copy() returns Array<Point> (vertices)
         reserved = self.citadel.shape.vertices.copy() if self.citadel else []
 
         self.border = CurtainWall(self.walls_needed, self, self.inner, reserved)
@@ -427,58 +428,23 @@ class Model:
         if len(A) == 0:
             return Polygon()
 
-        # Build a map from point to list of indices where it appears as A
-        point_to_indices = {}
-        for i, point in enumerate(A):
-            if point not in point_to_indices:
-                point_to_indices[point] = []
-            point_to_indices[point].append(i)
-
-        # Find the longest cycle starting from each unvisited edge
+        # Simple algorithm matching Haxe implementation
         result = Polygon()
-        visited_edges = set()
-
-        for start_idx in range(len(A)):
-            if start_idx in visited_edges:
-                continue
-
-            cycle = []
-            current_idx = start_idx
-            cycle_visited = set()
-
-            while current_idx not in cycle_visited and current_idx not in visited_edges:
-                cycle_visited.add(current_idx)
-                visited_edges.add(current_idx)
-                cycle.append(A[current_idx])
-
-                # Find next edge: B[current_idx] should be A[next_idx]
-                next_point = B[current_idx]
-                if next_point in point_to_indices:
-                    # Find an unvisited index that matches
-                    found = False
-                    for next_idx in point_to_indices[next_point]:
-                        if next_idx not in visited_edges:
-                            current_idx = next_idx
-                            found = True
-                            break
-                    if not found:
-                        # Try any matching index
-                        if point_to_indices[next_point]:
-                            current_idx = point_to_indices[next_point][0]
-                            if current_idx in visited_edges:
-                                break
-                        else:
-                            break
-                else:
-                    break
-
-                # Check if we've completed a cycle
-                if current_idx == start_idx or A[current_idx] == A[start_idx]:
-                    break
-
-            # Keep the longest cycle
-            if len(cycle) > len(result.vertices):
-                result = Polygon(cycle)
+        index = 0
+        while True:
+            result.append(A[index])
+            try:
+                next_index = A.index(B[index])
+            except ValueError:
+                # If B[index] not found in A, we've reached the end
+                break
+            if next_index == index:
+                # Self-loop, break
+                break
+            if next_index == 0:
+                # Completed the cycle
+                break
+            index = next_index
 
         return result
 
