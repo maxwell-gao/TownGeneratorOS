@@ -3,8 +3,45 @@ JSON export functionality - GeoJSON FeatureCollection format
 """
 
 import json
+from pathlib import Path
 from .model import Model
 from .ward import Market, Park, Farm
+
+
+def _get_version():
+    """Get version from pyproject.toml"""
+    try:
+        # Try tomllib (Python 3.11+)
+        import tomllib
+
+        pyproject_path = Path(__file__).parent.parent / "pyproject.toml"
+        with open(pyproject_path, "rb") as f:
+            pyproject = tomllib.load(f)
+            return pyproject.get("project", {}).get("version", "0.1.0")
+    except ImportError:
+        # Fallback for Python < 3.11: try tomli package
+        try:
+            import tomli
+
+            pyproject_path = Path(__file__).parent.parent / "pyproject.toml"
+            with open(pyproject_path, "rb") as f:
+                pyproject = tomli.load(f)
+                return pyproject.get("project", {}).get("version", "0.1.0")
+        except Exception:
+            # Final fallback: parse manually
+            pyproject_path = Path(__file__).parent.parent / "pyproject.toml"
+            if pyproject_path.exists():
+                with open(pyproject_path, "r") as f:
+                    for line in f:
+                        if line.strip().startswith("version"):
+                            # Extract version from line like: version = "0.1.0"
+                            parts = line.split("=")
+                            if len(parts) == 2:
+                                version = parts[1].strip().strip('"').strip("'")
+                                return version
+            return "0.1.0"
+    except Exception:
+        return "0.1.0"
 
 
 def polygon_to_coordinates(polygon):
@@ -46,7 +83,7 @@ def export_to_json(model, filename=None, indent=2):
             "towerRadius": 7.6,
             "wallThickness": 7.6,
             "generator": "mfcg-python",
-            "version": "0.1.0",
+            "version": _get_version(),
         }
     )
 
