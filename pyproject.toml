@@ -1,0 +1,13 @@
+[project]
+name = "town-generator"
+version = "0.1.0"
+description = "Medieval Fantasy City Generator - Python Port with JSON export"
+requires-python = ">=3.8"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["town_generator"]
