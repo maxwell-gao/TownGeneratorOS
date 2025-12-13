@@ -45,13 +45,15 @@ def export_to_json(model, filename=None, indent=2):
             "roadWidth": 8,
             "towerRadius": 7.6,
             "wallThickness": 7.6,
-            "generator": "mfcg",
-            "version": "0.11.5",
+            "generator": "mfcg-python",
+            "version": "0.1.0",
         }
     )
 
-    # 2. Earth polygon (outer boundary of all patches)
-    earth_polygon = model.find_circumference(model.patches)
+    # 2. Earth polygon (outer boundary of all original patches)
+    # Use all_patches if available, otherwise fall back to patches
+    all_patches = getattr(model, "all_patches", None) or model.patches
+    earth_polygon = model.find_circumference(all_patches)
     if earth_polygon and len(earth_polygon.vertices) > 0:
         features.append(
             {
