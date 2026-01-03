@@ -11,11 +11,15 @@ class Polygon:
     
     DELTA = 0.000001
     
-    def __init__(self, vertices=None):
+    def __init__(self, vertices=None, copy_points=False):
         if vertices is None:
             self.vertices = []
-        else:
+        elif copy_points:
+            # Create copies of points (used when we explicitly want copies)
             self.vertices = [Point(v.x, v.y) if isinstance(v, Point) else Point(v[0], v[1]) for v in vertices]
+        else:
+            # Preserve point references (matches Haxe behavior)
+            self.vertices = [v if isinstance(v, Point) else Point(v[0], v[1]) for v in list(vertices)]
     
     def __len__(self):
         return len(self.vertices)
@@ -33,8 +37,8 @@ class Polygon:
         return f"Polygon({len(self.vertices)} vertices)"
     
     def copy(self):
-        """Create a copy of the polygon"""
-        return Polygon([Point(v.x, v.y) for v in self.vertices])
+        """Create a copy of the polygon with copied points"""
+        return Polygon(self.vertices, copy_points=True)
     
     def append(self, point):
         """Add a vertex"""

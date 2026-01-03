@@ -72,10 +72,14 @@ class Model:
 
     instance = None
 
-    def __init__(self, n_patches=-1, seed=-1):
+    def __init__(self, n_patches=-1, seed=-1, debug_callback=None):
         if seed > 0:
             Random.reset(seed)
         self.n_patches = n_patches if n_patches != -1 else 15
+        
+        # Debug callback for step-by-step visualization
+        # Signature: callback(step_number: int, step_name: str, model: Model)
+        self._debug_callback = debug_callback
 
         self.plaza_needed = Random.bool()
         self.citadel_needed = Random.bool()
@@ -119,11 +123,30 @@ class Model:
         self.roads = []
 
         self._build_patches()
+        self._debug_step(1, "build_patches")
+        
         self._optimize_junctions()
+        self._debug_step(2, "optimize_junctions")
+        
         self._build_walls()
+        self._debug_step(3, "build_walls")
+        
         self._build_streets()
+        self._debug_step(4, "build_streets")
+        
         self._create_wards()
+        self._debug_step(5, "create_wards")
+        
         self._build_geometry()
+        self._debug_step(6, "build_geometry")
+    
+    def _debug_step(self, step_number, step_name):
+        """Call debug callback if set."""
+        if self._debug_callback is not None:
+            try:
+                self._debug_callback(step_number, step_name, self)
+            except Exception as e:
+                print(f"Debug callback error at step {step_number}: {e}")
 
     def _build_patches(self):
         """Build Voronoi patches"""
@@ -451,8 +474,10 @@ class Model:
     def _process_circumference_edge(self, a, b, w1, wards, A, B):
         """Process edge for circumference"""
         outer_edge = True
+        # Note: Haxe version checks ALL wards (including w1 itself)
+        # A simple polygon can't have both (a,b) and (b,a) edges, so checking w1 is harmless
         for w2 in wards:
-            if w2 != w1 and w2.shape.find_edge(b, a) != -1:
+            if w2.shape.find_edge(b, a) != -1:
                 outer_edge = False
                 break
         if outer_edge:

@@ -11,8 +11,9 @@ class CurtainWall:
     """City wall representation"""
 
     def __init__(self, real, model, patches, reserved):
-        # Note: In Haxe, real is always set to true, but we use the parameter
-        self.real = real
+        # Note: In Haxe, real is always set to true regardless of parameter!
+        # Line 23: this.real = true;
+        self.real = True
         self.patches = patches
         self.gates = []
         self.towers = []
@@ -24,15 +25,19 @@ class CurtainWall:
             self.shape = model.find_circumference(patches)
 
             if real:
+                # Match Haxe: shape.set() modifies vertices IN-PLACE
+                # so the same Point objects (references) are kept but coordinates updated
                 smooth_factor = min(1, 40 / len(patches))
-                smoothed = []
+                smoothed_coords = []
                 for v in self.shape.vertices:
-                    # reserved is Array<Point> (vertices)
                     if v in reserved:
-                        smoothed.append(v)
+                        smoothed_coords.append((v.x, v.y))  # Keep original coords
                     else:
-                        smoothed.append(self.shape.smooth_vertex(v, smooth_factor))
-                self.shape = Polygon(smoothed)
+                        sv = self.shape.smooth_vertex(v, smooth_factor)
+                        smoothed_coords.append((sv.x, sv.y))
+                # Update vertices in-place (same objects, modified coords)
+                for i, v in enumerate(self.shape.vertices):
+                    v.x, v.y = smoothed_coords[i]
 
         self.segments = [True] * len(self.shape.vertices)
         self._build_gates(real, model, reserved)
@@ -104,15 +109,12 @@ class CurtainWall:
         if len(self.gates) == 0:
             raise ValueError("Bad walled area shape!")
 
-        # Smooth gate sections
+        # Smooth gate sections - modify in place like Haxe: gate.set(shape.smoothVertex(gate))
         if real:
-            smoothed = []
-            for v in self.shape.vertices:
-                if v in self.gates:
-                    smoothed.append(self.shape.smooth_vertex(v))
-                else:
-                    smoothed.append(v)
-            self.shape = Polygon(smoothed)
+            for gate in self.gates:
+                smoothed = self.shape.smooth_vertex(gate)
+                gate.x = smoothed.x
+                gate.y = smoothed.y
 
     def build_towers(self):
         """Build towers along the wall"""

@@ -48,23 +48,30 @@ class Graph:
             self.nodes.remove(node)
     
     def a_star(self, start, goal, exclude=None):
-        """A* pathfinding"""
-        closed_set = set(exclude or [])
+        """A* pathfinding (matching Haxe implementation which is BFS-like).
+        
+        Note: The original Haxe implementation uses shift() to get the first
+        element rather than sorting by g_score, making it more like BFS.
+        We match this behavior for consistency.
+        """
+        # Match Haxe: closedSet = exclude != null ? exclude.copy() : []
+        closed_set = list(exclude) if exclude else []
         open_set = [start]
         came_from = {}
         g_score = {start: 0}
         
         while len(open_set) > 0:
-            # Find node with lowest g_score
-            current = min(open_set, key=lambda n: g_score.get(n, float('inf')))
+            # Match Haxe: var current = openSet.shift()
+            # shift() removes and returns the first element
+            current = open_set.pop(0)
             
             if current == goal:
                 return self._build_path(came_from, current)
             
-            open_set.remove(current)
-            closed_set.add(current)
+            # Match Haxe: closedSet.push(current)
+            closed_set.append(current)
             
-            cur_score = g_score[current]
+            cur_score = g_score.get(current, 0)
             for neighbour, weight in current.links.items():
                 if neighbour in closed_set:
                     continue

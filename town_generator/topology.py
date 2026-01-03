@@ -77,13 +77,21 @@ class Topology:
         return None if v in blocked else node
 
     def build_path(self, from_pt, to_pt, exclude=None):
-        """Build path from one point to another"""
+        """Build path from one point to another.
+        
+        Args:
+            from_pt: Starting point
+            to_pt: Ending point  
+            exclude: List of Nodes to exclude from pathfinding (NOT Points!)
+                     In Haxe: topology.buildPath(gate, end, topology.outer)
+                     where topology.outer is Array<Node>
+        """
         if from_pt not in self.pt2node or to_pt not in self.pt2node:
             return None
 
-        exclude_nodes = [self.pt2node[p] for p in (exclude or []) if p in self.pt2node]
+        # exclude is already a list of Nodes (matching Haxe: exclude:Array<Node>=null)
         path = self.graph.a_star(
-            self.pt2node[from_pt], self.pt2node[to_pt], exclude_nodes
+            self.pt2node[from_pt], self.pt2node[to_pt], exclude
         )
 
         if path is None:
