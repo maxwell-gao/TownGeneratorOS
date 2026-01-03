@@ -67,21 +67,24 @@ def interpolate(p1, p2, ratio):
 def intersect_lines(x1, y1, dx1, dy1, x2, y2, dx2, dy2):
     """
     Find intersection of two lines.
-    Returns (t1, t2) where intersection is at (x1 + t1*dx1, y1 + t1*dy1)
+    Returns Point(t1, t2) where intersection is at (x1 + t1*dx1, y1 + t1*dy1)
     or None if lines are parallel.
+    
+    Matches Haxe GeomUtils.intersectLines
     """
     # Line 1: (x1, y1) + t1*(dx1, dy1)
     # Line 2: (x2, y2) + t2*(dx2, dy2)
     
-    # Solve: x1 + t1*dx1 = x2 + t2*dx2
-    #        y1 + t1*dy1 = y2 + t2*dy2
-    
-    denom = dx1 * dy2 - dy1 * dx2
-    if abs(denom) < 1e-10:
+    d = dx1 * dy2 - dy1 * dx2
+    if d == 0:
         return None  # Parallel lines
     
-    t2 = ((x1 - x2) * dy1 - (y1 - y2) * dx1) / denom
-    t1 = ((x2 - x1) * dx2 + (y2 - y1) * dy2) / (-denom) if abs(dx1) < 1e-10 else (x2 + t2 * dx2 - x1) / dx1
+    # Match Haxe formula exactly
+    t2 = (dy1 * (x2 - x1) - dx1 * (y2 - y1)) / d
+    if dx1 != 0:
+        t1 = (x2 - x1 + dx2 * t2) / dx1
+    else:
+        t1 = (y2 - y1 + dy2 * t2) / dy1
     
     from .point import Point
     return Point(t1, t2)

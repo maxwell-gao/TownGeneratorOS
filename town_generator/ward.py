@@ -195,7 +195,9 @@ class Ward:
         b = (Random.float() - 0.5) * angle_spread
 
         try:
-            halves = Cutter.bisect(poly, v, ratio, b, split if split else 0.0)
+            # Match Haxe: split ? ALLEY : 0.0
+            gap = Ward.ALLEY if split else 0.0
+            halves = Cutter.bisect(poly, v, ratio, b, gap)
         except:
             return [poly] if poly.square >= min_sq else []
 

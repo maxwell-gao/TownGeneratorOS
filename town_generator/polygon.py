@@ -273,43 +273,173 @@ class Polygon:
         return best
     
     def shrink(self, distances):
-        """Shrink polygon by distances (simplified version)"""
-        # This is a simplified version - full implementation is complex
-        # For now, we'll use buffer with negative distances
-        return self.buffer([-d for d in distances])
+        """Shrink polygon by cutting each edge inward.
+        
+        This works well for convex polygons. It iteratively cuts 
+        along each edge that has a positive distance, keeping the 
+        shrunken side.
+        """
+        q = self.copy()
+        i = 0
+        
+        def process_edge(v1, v2):
+            nonlocal q, i
+            dd = distances[i] if i < len(distances) else 0
+            i += 1
+            if dd > 0:
+                v = v2 - v1
+                n = v.rotate90().norm(dd)
+                # Cut and keep the first half (the shrunken side)
+                halves = q.cut(v1 + n, v2 + n, 0)
+                if len(halves) > 0:
+                    q = halves[0]
+        
+        self.for_edge(process_edge)
+        return q
     
     def shrink_eq(self, d):
         """Shrink all edges by same distance"""
         return self.shrink([d] * len(self.vertices))
     
+    def peel(self, v1, d):
+        """Cut a peel along one edge starting at v1.
+        
+        This is a version of shrink for insetting just one edge.
+        """
+        i1 = self.index_of(v1)
+        if i1 == -1:
+            return self.copy()
+        i2 = (i1 + 1) % len(self.vertices)
+        v2 = self.vertices[i2]
+        
+        v = v2 - v1
+        n = v.rotate90().norm(d)
+        
+        return self.cut(v1 + n, v2 + n, 0)[0]
+    
     def buffer(self, distances):
-        """Buffer polygon by distances (simplified)"""
-        # Simplified buffer - creates offset edges
-        result = Polygon()
-        for i in range(len(self.vertices)):
-            v0 = self.vertices[i]
-            v1 = self.vertices[(i + 1) % len(self.vertices)]
-            d = distances[i] if i < len(distances) else 0
-            if d == 0:
-                result.append(v0)
-                result.append(v1)
+        """Buffer polygon by offsetting edges and resolving self-intersections.
+        
+        Creates a polygon with offset edges, finds all self-intersections,
+        and returns the largest valid sub-polygon.
+        """
+        # Step 1: Create polygon with offset edges
+        q = Polygon()
+        i = 0
+        
+        def add_offset_edge(v0, v1):
+            nonlocal i
+            dd = distances[i] if i < len(distances) else 0
+            i += 1
+            if dd == 0:
+                q.append(Point(v0.x, v0.y))
+                q.append(Point(v1.x, v1.y))
             else:
                 v = v1 - v0
-                n = v.rotate90().norm(abs(d))
-                if d < 0:
-                    n = n * -1
-                result.append(v0 + n)
-                result.append(v1 + n)
-        # For now, return simplified result
-        # Full implementation would handle self-intersections
-        return result
+                n = v.rotate90().norm(dd)
+                q.append(v0 + n)
+                q.append(v1 + n)
+        
+        self.for_edge(add_offset_edge)
+        
+        if len(q.vertices) < 3:
+            return self.copy()
+        
+        # Step 2: Find and insert self-intersection points
+        was_cut = True
+        last_edge = 0
+        
+        while was_cut:
+            was_cut = False
+            n = len(q.vertices)
+            
+            for i in range(last_edge, n - 2):
+                last_edge = i
+                
+                p11 = q.vertices[i]
+                p12 = q.vertices[i + 1]
+                x1, y1 = p11.x, p11.y
+                dx1, dy1 = p12.x - x1, p12.y - y1
+                
+                end_j = n if i > 0 else n - 1
+                for j in range(i + 2, end_j):
+                    p21 = q.vertices[j]
+                    p22 = q.vertices[(j + 1) % n]
+                    x2, y2 = p21.x, p21.y
+                    dx2, dy2 = p22.x - x2, p22.y - y2
+                    
+                    t = intersect_lines(x1, y1, dx1, dy1, x2, y2, dx2, dy2)
+                    if t is not None:
+                        if (t.x > self.DELTA and t.x < 1 - self.DELTA and 
+                            t.y > self.DELTA and t.y < 1 - self.DELTA):
+                            pn = Point(x1 + dx1 * t.x, y1 + dy1 * t.x)
+                            
+                            # Insert at j+1 first (to not affect i+1)
+                            q.vertices.insert(j + 1, Point(pn.x, pn.y))
+                            q.vertices.insert(i + 1, Point(pn.x, pn.y))
+                            
+                            was_cut = True
+                            break
+                
+                if was_cut:
+                    break
+        
+        # Step 3: Find the largest closed sub-polygon
+        regular = list(range(len(q.vertices)))
+        
+        best_part = None
+        best_part_sq = float('-inf')
+        
+        while len(regular) > 0:
+            indices = []
+            start = regular[0]
+            i = start
+            
+            while True:
+                indices.append(i)
+                if i in regular:
+                    regular.remove(i)
+                
+                next_idx = (i + 1) % len(q.vertices)
+                v = q.vertices[next_idx]
+                
+                # Find if this vertex appears elsewhere (self-intersection point)
+                next1 = -1
+                for k, qv in enumerate(q.vertices):
+                    if k == next_idx:
+                        continue
+                    if abs(qv.x - v.x) < self.DELTA and abs(qv.y - v.y) < self.DELTA:
+                        next1 = k
+                        break
+                
+                i = next1 if next1 != -1 else next_idx
+                
+                if i == start:
+                    break
+                
+                # Safety: prevent infinite loops
+                if len(indices) > len(q.vertices) * 2:
+                    break
+            
+            if len(indices) >= 3:
+                p = Polygon([q.vertices[idx] for idx in indices])
+                s = p.square
+                if s > best_part_sq:
+                    best_part = p
+                    best_part_sq = s
+        
+        return best_part if best_part is not None else self.copy()
     
     def buffer_eq(self, d):
         """Buffer all edges by same distance"""
         return self.buffer([d] * len(self.vertices))
     
     def cut(self, p1, p2, gap=0.0):
-        """Cut polygon with line from p1 to p2"""
+        """Cut polygon with line from p1 to p2.
+        
+        Returns two halves of the polygon. If gap > 0, applies a peel
+        operation to create a gap between the halves.
+        """
         x1, y1 = p1.x, p1.y
         dx1, dy1 = p2.x - x1, p2.y - y1
         
@@ -338,28 +468,41 @@ class Polygon:
                 count += 1
         
         if count == 2:
-            point1 = geom_interpolate(p1, p2, ratio1)
-            point2 = geom_interpolate(p1, p2, ratio2)
+            # Match Haxe: point = p1.add(p2.subtract(p1).scale(ratio))
+            point1 = p1 + (p2 - p1) * ratio1
+            point2 = p1 + (p2 - p1) * ratio2
             
-            # Create two halves
-            half1_verts = [point1] + self.vertices[edge1 + 1:edge2 + 1] + [point2]
-            half2_verts = [point2] + self.vertices[edge2 + 1:] + self.vertices[:edge1 + 1] + [point1]
+            # Create two halves matching Haxe order
+            # half1: slice(edge1+1, edge2+1), then unshift(point1), push(point2)
+            half1_verts = [point1] + list(self.vertices[edge1 + 1:edge2 + 1]) + [point2]
+            
+            # half2: slice(edge2+1).concat(slice(0, edge1+1)), then unshift(point2), push(point1)
+            half2_verts = [point2] + list(self.vertices[edge2 + 1:]) + list(self.vertices[:edge1 + 1]) + [point1]
             
             half1 = Polygon(half1_verts)
             half2 = Polygon(half2_verts)
             
             if gap > 0:
-                # Apply gap (simplified)
-                pass
+                # Apply gap by peeling edges from cut line
+                half1 = half1.peel(point2, gap / 2)
+                half2 = half2.peel(point1, gap / 2)
             
             # Determine order based on cross product
-            v = self.vector(self.vertices[edge1])
+            v = self.vectori(edge1)
             if cross(dx1, dy1, v.x, v.y) > 0:
                 return [half1, half2]
             else:
                 return [half2, half1]
         else:
             return [self.copy()]
+    
+    def vectori(self, index):
+        """Get vector from vertex at index to next vertex"""
+        if index < 0 or index >= len(self.vertices):
+            return Point(0, 0)
+        v0 = self.vertices[index]
+        v1 = self.vertices[(index + 1) % len(self.vertices)]
+        return v1 - v0
     
     def split(self, p1, p2):
         """Split polygon at two points"""
